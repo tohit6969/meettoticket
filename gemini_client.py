@@ -33,50 +33,56 @@ def _init_client() -> GenerativeModel:
         )
     genai.configure(api_key=api_key)
     
-    # Get the raw schema dictionary from Pydantic
+    # 1. Grab raw schema dictionary structure out of your Pydantic blueprint
     base_schema = MeetingAnalysis.model_json_schema()
     
-    # Extract the definitions mapping out of the schema if it exists
+    # 2. Isolate internal sub-model maps if they exist
     definitions = base_schema.pop("$defs", {})
     
-    def inline_and_sanitize(d):
+    def complete_gemini_sanitizer(d):
         """
-        Recursively steps through the dictionary to replace Pydantic's 
-        '$ref' and 'anyOf' pointers with Gemini-compatible native layouts.
+        An absolute whitelist filter that reconstructs properties to contain 
+        ONLY fields supported explicitly by Google's API gateway.
         """
         if isinstance(d, dict):
-            # 1. Resolve nested schema references instantly
+            # Resolve nested Pydantic references ($ref) instantly
             if "$ref" in d:
                 ref_path = d.pop("$ref")
                 ref_name = ref_path.split("/")[-1]
                 if ref_name in definitions:
                     d.update(definitions[ref_name])
             
-            # 2. CRITICAL FIX: Convert Pydantic's 'anyOf' [Type, null] into a native nullable Type
+            # Resolve complex 'anyOf' arrays to primitive nullable types
             if "anyOf" in d:
                 any_of_list = d.pop("anyOf")
-                # Filter out the null option to find the actual data type
-                non_null_types = [t for t in any_of_list if isinstance(t, dict) and t.get("type") != "null"]
-                
-                if non_null_types:
-                    # Merge the true data type attributes directly into the property block
-                    d.update(non_null_types[0])
+                non_null = [t for t in any_of_list if isinstance(t, dict) and t.get("type") != "null"]
+                if non_null:
+                    d.update(non_null[0])
                     d["nullable"] = True
+
+            # 🚨 THE BULLETPROOF WHITELIST LAYER:
+            # Google Gemini only allows these explicit schema attributes.
+            # Anything else (maxLength, pattern, default, title) gets dropped here.
+            allowed_keys = {
+                "type", "properties", "required", "items", 
+                "enum", "description", "nullable"
+            }
             
-            # 3. Drop any unsupported keyword arguments
-            d.pop("default", None)
-            d.pop("title", None)
+            # Remove un-whitelisted attributes directly from this dictionary layer
+            for forbidden_key in list(d.keys()):
+                if forbidden_key not in allowed_keys:
+                    d.pop(forbidden_key)
             
-            # 4. Recursively parse child parameters
+            # Recursively pass down the chain to check children
             for k, v in list(d.items()):
-                inline_and_sanitize(v)
+                complete_gemini_sanitizer(v)
                 
         elif isinstance(d, list):
             for item in d:
-                inline_and_sanitize(item)
+                complete_gemini_sanitizer(item)
 
-    # Transform the schema dictionary completely inline
-    inline_and_sanitize(base_schema)
+    # Clean the blueprint from top to bottom
+    complete_gemini_sanitizer(base_schema)
     
     return genai.GenerativeModel(
         model_name="gemini-2.5-flash",
@@ -86,7 +92,6 @@ def _init_client() -> GenerativeModel:
             response_schema=base_schema,
         ),
     )
-
 # ─────────────────────────────────────────────
 # System Prompt
 # ─────────────────────────────────────────────
