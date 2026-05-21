@@ -45,13 +45,28 @@ BASE_BACKOFF_SEC = 2.0      # doubles each retry: 2, 4, 8, 16 seconds
 # ─────────────────────────────────────────────
 
 def _get_client() -> gspread.Client:
-    creds_path = os.environ.get("GOOGLE_CREDENTIALS_JSON", "credentials.json")
-    if not Path(creds_path).exists():
-        raise FileNotFoundError(
-            f"Google credentials not found at '{creds_path}'. "
-            "Download from Google Cloud Console → Service Accounts → Keys."
-        )
-    creds = Credentials.from_service_account_file(creds_path, scopes=SCOPES)
+    # 1. Grab the credential string from the cloud environment or fallback to local file name
+    creds_source = os.environ.get("GOOGLE_CREDENTIALS_JSON", "credentials.json").strip()
+    
+    # ✅ FIX: Verify if the source string contains raw JSON bracket layout
+    if creds_source.startswith("{"):
+        try:
+            # Cloud Production Tier: Parse string data straight into memory dictionary configuration
+            creds_info = json.loads(creds_source)
+            creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
+            logger.info("Successfully authenticated via Google credentials JSON string.")
+        except json.JSONDecodeError as json_err:
+            raise ValueError(f"GOOGLE_CREDENTIALS_JSON environment string contains malformed JSON: {json_err}")
+    else:
+        # Local Development Tier: Fallback safely to evaluate standard directory paths
+        if not Path(creds_source).exists():
+            raise FileNotFoundError(
+                f"Google credentials not found at '{creds_source}'. "
+                "Download from Google Cloud Console → Service Accounts → Keys."
+            )
+        creds = Credentials.from_service_account_file(creds_source, scopes=SCOPES)
+        logger.info("Successfully authenticated via local Google credentials file.")
+        
     return gspread.authorize(creds)
 
 
@@ -106,7 +121,7 @@ def _sync_write_to_sheets(
     transcript_hash: str,
 ) -> dict:
     """
-    Blocking write to Google Sheets.  Called via asyncio.to_thread so it
+    Blocking write to Google Sheets. Called via asyncio.to_thread so it
     does NOT block the Streamlit event loop.
 
     Returns a dict with outcome info surfaced in the UI.
