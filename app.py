@@ -1,7 +1,7 @@
 """
 app.py — MeetToTicket AI
 Main Streamlit application.
-Pipeline: Transcript → Dedup → Gemini (Structured Output) → Sheets (Async)
+Pipeline: Transcript → Dedup → Gemini (Structured Output) → Sheets (Async) → Global Chatbot
 """
 
 import asyncio
@@ -19,10 +19,11 @@ from gemini_client import extract_tickets_from_transcript
 from models import MeetingAnalysis, Priority, TicketStatus
 from sheets_client import retry_cached_tickets, write_analysis_to_sheets
 
-
+# ✅ NATIVE INTEGRATION: Import the chatbot assistant utility module
+from chatbot_manager import answer_ticket_query
 
 # ─────────────────────────────────────────────
-# Bootstrap
+# Bootstrap & System Logging Setup
 # ─────────────────────────────────────────────
 
 load_dotenv()
@@ -38,6 +39,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 # ─────────────────────────────────────────────
 # Page config
 # ─────────────────────────────────────────────
@@ -50,7 +52,7 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────
-# Custom CSS
+# Custom CSS Styling Layouts
 # ─────────────────────────────────────────────
 
 st.markdown(
@@ -148,7 +150,7 @@ st.markdown(
 
 
 # ─────────────────────────────────────────────
-# Helpers
+# UI Elements & Component Helpers
 # ─────────────────────────────────────────────
 
 PRIORITY_BADGE = {
@@ -213,7 +215,7 @@ async def run_pipeline(
             "message": "This exact transcript was already processed. No duplicate tickets created.",
         }
 
-    # 2. LLM extraction (runs in Streamlit's thread but is fast enough; heavy IO is sheets)
+    # 2. LLM extraction
     try:
         analysis: MeetingAnalysis = extract_tickets_from_transcript(
             transcript, custom_instructions or None
@@ -224,7 +226,7 @@ async def run_pipeline(
     # 3. Async Sheets write
     sheets_result = await write_analysis_to_sheets(spreadsheet_id, analysis, tx_hash)
 
-    # 4. Register in dedup store (even if Sheets failed — we cached locally)
+    # 4. Register in dedup store
     register_submission(tx_hash, analysis.meeting_title, len(analysis.tickets))
 
     return {
@@ -236,7 +238,7 @@ async def run_pipeline(
 
 
 # ─────────────────────────────────────────────
-# Sidebar
+# Sidebar Context Management
 # ─────────────────────────────────────────────
 
 with st.sidebar:
@@ -274,7 +276,7 @@ with st.sidebar:
 
 
 # ─────────────────────────────────────────────
-# Main tabs
+# Workspace Tabs Definition
 # ─────────────────────────────────────────────
 
 tab_submit, tab_board, tab_history = st.tabs(
@@ -283,7 +285,7 @@ tab_submit, tab_board, tab_history = st.tabs(
 
 
 # ══════════════════════════════════════════════
-# TAB 1 — Submit Transcript
+# TAB 1 — Submit Transcript Area
 # ══════════════════════════════════════════════
 
 with tab_submit:
@@ -329,6 +331,7 @@ with tab_submit:
                 unsafe_allow_html=True,
             )
 
+    # Execution Action Block
     if submit_clicked:
         if not transcript_text.strip():
             st.error("Please paste a transcript before submitting.")
@@ -345,82 +348,89 @@ with tab_submit:
                 st.write("✅ Pipeline complete.")
                 status.update(label="Done!", state="complete")
 
-            # ── Render results ──────────────────────────────────────────
+            # ✅ Persistent cache storage for layout retention
+            st.session_state["active_run_outcome"] = result
+            if result["status"] == "success":
+                st.session_state["last_analysis"] = result["analysis"]
+                # Flush chat log arrays on fresh generation loads
+                if "chat_messages" in st.session_state:
+                    del st.session_state["chat_messages"]
 
-            if result["status"] == "duplicate":
+    # ✅ Persistent Dashboard Rendering Layer (Maintains views during Chatbot reruns)
+    if "active_run_outcome" in st.session_state:
+        result = st.session_state["active_run_outcome"]
+
+        if result["status"] == "duplicate":
+            st.markdown(
+                f'<div class="warning-box">⚠️ {result["message"]}</div>',
+                unsafe_allow_html=True,
+            )
+
+        elif result["status"] == "llm_error":
+            st.error(f"❌ AI extraction failed: {result['message']}")
+            st.info("Check your GEMINI_API_KEY and try again.")
+
+        elif result["status"] == "success":
+            analysis: MeetingAnalysis = st.session_state["last_analysis"]
+            sheets_res = result["sheets_result"]
+
+            # Connection outcome notice banners
+            if sheets_res.get("success"):
                 st.markdown(
-                    f'<div class="warning-box">⚠️ {result["message"]}</div>',
+                    f'<div class="success-box">✅ {len(analysis.tickets)} tickets written to Google Sheets.'
+                    f' <a href="{sheets_res["spreadsheet_url"]}" target="_blank">'
+                    f'Open Sheet →</a></div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f'<div class="warning-box">⚠️ Sheets unavailable: {sheets_res.get("error", "Unknown error")}'
+                    f"<br>Tickets cached locally — use 'Retry Pending' when connectivity is restored."
+                    f"</div>",
                     unsafe_allow_html=True,
                 )
 
-            elif result["status"] in ("llm_error",):
-                st.error(f"❌ AI extraction failed: {result['message']}")
-                st.info("Check your GEMINI_API_KEY and try again.")
-
-            elif result["status"] == "success":
-                analysis: MeetingAnalysis = result["analysis"]
-                sheets_res = result["sheets_result"]
-
-                # Success / warning banner
-                if sheets_res.get("success"):
-                    st.markdown(
-                        f'<div class="success-box">✅ {len(analysis.tickets)} tickets written to Google Sheets.'
-                        f' <a href="{sheets_res["spreadsheet_url"]}" target="_blank">'
-                        f'Open Sheet →</a></div>',
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.markdown(
-                        f'<div class="warning-box">⚠️ Sheets unavailable: {sheets_res.get("error", "Unknown error")}'
-                        f"<br>Tickets cached locally — use 'Retry Pending' when connectivity is restored."
-                        f"</div>",
-                        unsafe_allow_html=True,
-                    )
-
-                # Meeting summary
-                st.markdown(f"### 📋 {analysis.meeting_title}")
-                c1, c2, c3, c4 = st.columns(4)
-                for col, val, label in [
-                    (c1, len(analysis.tickets),                   "Tickets Created"),
-                    (c2, len(analysis.participants),              "Participants"),
-                    (c3, len(analysis.action_items_without_owner),"Unowned Actions"),
-                    (c4, len(analysis.risks_flagged),             "Risks Flagged"),
-                ]:
-                    col.markdown(
-                        f'<div class="metric-card"><h3>{val}</h3><p>{label}</p></div>',
-                        unsafe_allow_html=True,
-                    )
-
-                st.markdown(f"> {analysis.summary}")
-
-                # Risks
-                if analysis.risks_flagged:
-                    with st.expander("⚠️ Risks & Blockers Flagged"):
-                        for r in analysis.risks_flagged:
-                            st.markdown(f"- {r}")
-
-                # Unowned actions
-                if analysis.action_items_without_owner:
-                    with st.expander("🔍 Actions Without Owner (Not ticketed)"):
-                        for a in analysis.action_items_without_owner:
-                            st.markdown(f"- {a}")
-
-                # Tickets
-                st.markdown(f"### 🎫 Generated Tickets ({len(analysis.tickets)})")
-                for ticket in analysis.tickets:
-                    render_ticket_card(ticket)
-
-                # Download JSON
-                st.divider()
-                st.download_button(
-                    "⬇️ Download as JSON",
-                    data=analysis.model_dump_json(indent=2),
-                    file_name=f"tickets_{result['tx_hash'][:8]}.json",
-                    mime="application/json",
+            # Dashboard analytics card layout blocks
+            st.markdown(f"### 📋 {analysis.meeting_title}")
+            c1, c2, c3, c4 = st.columns(4)
+            for col, val, label in [
+                (c1, len(analysis.tickets),                    "Tickets Created"),
+                (c2, len(analysis.participants),               "Participants"),
+                (c3, len(analysis.action_items_without_owner), "Unowned Actions"),
+                (c4, len(analysis.risks_flagged),              "Risks Flagged"),
+            ]:
+                col.markdown(
+                    f'<div class="metric-card"><h3>{val}</h3><p>{label}</p></div>',
+                    unsafe_allow_html=True,
                 )
 
-                # Store in session for board tab
-                st.session_state["last_analysis"] = analysis
+            st.markdown(f"> {analysis.summary}")
+
+            # Risk parameters expansion frames
+            if analysis.risks_flagged:
+                with st.expander("⚠️ Risks & Blockers Flagged"):
+                    for r in analysis.risks_flagged:
+                        st.markdown(f"- {r}")
+
+            # Action assignment coverage tracking frames
+            if analysis.action_items_without_owner:
+                with st.expander("🔍 Actions Without Owner (Not ticketed)"):
+                    for a in analysis.action_items_without_owner:
+                        st.markdown(f"- {a}")
+
+            # Extracted visual card structures
+            st.markdown(f"### 🎫 Generated Tickets ({len(analysis.tickets)})")
+            for ticket in analysis.tickets:
+                render_ticket_card(ticket)
+
+            # JSON Data backup element
+            st.divider()
+            st.download_button(
+                "⬇️ Download as JSON",
+                data=analysis.model_dump_json(indent=2),
+                file_name=f"tickets_{result['tx_hash'][:8]}.json",
+                mime="application/json",
+            )
 
 
 # ══════════════════════════════════════════════
@@ -463,7 +473,6 @@ with tab_board:
         if not filtered:
             st.warning("No tickets match your filters.")
         else:
-            # Group by assignee
             by_owner: dict = {}
             for t in filtered:
                 by_owner.setdefault(t.assigned_to, []).append(t)
@@ -476,7 +485,7 @@ with tab_board:
 
 
 # ══════════════════════════════════════════════
-# TAB 3 — Submission History
+# TAB 3 — Submission History Archive
 # ══════════════════════════════════════════════
 
 with tab_history:
@@ -508,3 +517,43 @@ with tab_history:
             file_name="meettoticket_pending_cache.json",
             mime="application/json",
         )
+
+
+# ══════════════════════════════════════════════
+# 💬 GLOBAL COMPONENT — Interactive Contextual Chatbot
+# ══════════════════════════════════════════════
+
+# Placed at the absolute root level (no tab nesting block) to render flawlessly!
+if "last_analysis" in st.session_state:
+    analysis: MeetingAnalysis = st.session_state["last_analysis"]
+    
+    st.write("---")
+    st.subheader("💬 Ask MeetToTicket AI Chatbot")
+    st.caption("Ask questions about metrics, bugs, priorities, or assignees in English or Hinglish!")
+
+    # Initial assistant seed configuration
+    if "chat_messages" not in st.session_state:
+        st.session_state.chat_messages = [
+            {
+                "role": "assistant", 
+                "content": "Hi! Context loaded. Aap mujhse is meeting ke tickets ka total, bugs counter, ya custom assignees ke baare me kuch bhi pooch sakte hain! 👋"
+            }
+        ]
+
+    # Render persistent conversation layout streams
+    for msg in st.session_state.chat_messages:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+
+    # Monitor interactive prompt text submissions
+    if chat_prompt := st.chat_input("E.g., Total tickets kitne bane aur usme se high priority wale kaunse hai?"):
+        with st.chat_message("user"):
+            st.write(chat_prompt)
+        st.session_state.chat_messages.append({"role": "user", "content": chat_prompt})
+
+        # Process user query utilizing the active memory context structure
+        with st.chat_message("assistant"):
+            with st.spinner("Analyzing dashboard memory..."):
+                answer = answer_ticket_query(analysis, chat_prompt)
+                st.write(answer)
+        st.session_state.chat_messages.append({"role": "assistant", "content": answer})
