@@ -33,56 +33,57 @@ def _init_client() -> GenerativeModel:
         )
     genai.configure(api_key=api_key)
     
-    # 1. Grab raw schema dictionary structure out of your Pydantic blueprint
+    # 1. Grab raw schema dictionary out of your Pydantic blueprint
     base_schema = MeetingAnalysis.model_json_schema()
     
     # 2. Isolate internal sub-model maps if they exist
     definitions = base_schema.pop("$defs", {})
     
-    def complete_gemini_sanitizer(d):
-        """
-        An absolute whitelist filter that reconstructs properties to contain 
-        ONLY fields supported explicitly by Google's API gateway.
-        """
-        if isinstance(d, dict):
-            # Resolve nested Pydantic references ($ref) instantly
-            if "$ref" in d:
-                ref_path = d.pop("$ref")
-                ref_name = ref_path.split("/")[-1]
-                if ref_name in definitions:
-                    d.update(definitions[ref_name])
-            
-            # Resolve complex 'anyOf' arrays to primitive nullable types
-            if "anyOf" in d:
-                any_of_list = d.pop("anyOf")
-                non_null = [t for t in any_of_list if isinstance(t, dict) and t.get("type") != "null"]
-                if non_null:
-                    d.update(non_null[0])
-                    d["nullable"] = True
+    def clean_schema(d):
+        if not isinstance(d, dict):
+            return
 
-            # 🚨 THE BULLETPROOF WHITELIST LAYER:
-            # Google Gemini only allows these explicit schema attributes.
-            # Anything else (maxLength, pattern, default, title) gets dropped here.
-            allowed_keys = {
-                "type", "properties", "required", "items", 
-                "enum", "description", "nullable"
-            }
-            
-            # Remove un-whitelisted attributes directly from this dictionary layer
-            for forbidden_key in list(d.keys()):
-                if forbidden_key not in allowed_keys:
-                    d.pop(forbidden_key)
-            
-            # Recursively pass down the chain to check children
-            for k, v in list(d.items()):
-                complete_gemini_sanitizer(v)
+        # Handle nested Pydantic references ($ref) instantly
+        if "$ref" in d:
+            ref_path = d.pop("$ref")
+            ref_name = ref_path.split("/")[-1]
+            if ref_name in definitions:
+                d.update(definitions[ref_name])
+        
+        # Handle complex 'anyOf' arrays to primitive nullable types
+        if "anyOf" in d:
+            any_of_list = d.pop("anyOf")
+            non_null = [t for t in any_of_list if isinstance(t, dict) and t.get("type") != "null"]
+            if non_null:
+                d.update(non_null[0])
+                d["nullable"] = True
+
+        # Whitelist layer for schema validation attributes
+        allowed_keys = {
+            "type", "properties", "required", "items", 
+            "enum", "description", "nullable"
+        }
+        
+        for forbidden_key in list(d.keys()):
+            if forbidden_key not in allowed_keys:
+                d.pop(forbidden_key)
+        
+        # ✅ THE CRITICAL FIX: 
+        # Structural recursion. We navigate through the values of the fields 
+        # inside 'properties' without accidentally deleting the field names themselves!
+        if "properties" in d and isinstance(d["properties"], dict):
+            for field_schema in d["properties"].values():
+                clean_schema(field_schema)
                 
-        elif isinstance(d, list):
-            for item in d:
-                complete_gemini_sanitizer(item)
+        if "items" in d:
+            if isinstance(d["items"], dict):
+                clean_schema(d["items"])
+            elif isinstance(d["items"], list):
+                for item in d["items"]:
+                    clean_schema(item)
 
-    # Clean the blueprint from top to bottom
-    complete_gemini_sanitizer(base_schema)
+    # Clean the blueprint from top to bottom structurally
+    clean_schema(base_schema)
     
     return genai.GenerativeModel(
         model_name="gemini-2.5-flash",
@@ -92,6 +93,7 @@ def _init_client() -> GenerativeModel:
             response_schema=base_schema,
         ),
     )
+    
 # ─────────────────────────────────────────────
 # System Prompt
 # ─────────────────────────────────────────────
