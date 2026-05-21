@@ -32,11 +32,16 @@ def _init_client() -> GenerativeModel:
             "GEMINI_API_KEY not set. Add it to your secrets."
         )
     genai.configure(api_key=api_key)
+    
     return genai.GenerativeModel(
-        model_name="gemini-3.5-flash",
+        # Standard active free-tier production engine
+        model_name="gemini-2.5-flash",
         generation_config=GenerationConfig(
             temperature=0.2,
             response_mime_type="application/json",
+            # ✅ CRITICAL FIX: Forces the API gateway to strictly 
+            # constrain the LLM structural layout to your Pydantic blueprint
+            response_schema=MeetingAnalysis,
         ),
     )
 
