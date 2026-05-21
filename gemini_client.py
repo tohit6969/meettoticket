@@ -29,13 +29,13 @@ def _init_client() -> GenerativeModel:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise EnvironmentError(
-            "GEMINI_API_KEY not set. Add it to your .env file."
+            "GEMINI_API_KEY not set. Add it to your secrets."
         )
     genai.configure(api_key=api_key)
     return genai.GenerativeModel(
         model_name="gemini-1.5-flash",
         generation_config=GenerationConfig(
-            temperature=0.2,        # Low temp → deterministic structured output
+            temperature=0.2,
             response_mime_type="application/json",
         ),
     )
