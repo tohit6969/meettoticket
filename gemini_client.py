@@ -68,9 +68,7 @@ def _init_client() -> GenerativeModel:
             if forbidden_key not in allowed_keys:
                 d.pop(forbidden_key)
         
-        # ✅ THE CRITICAL FIX: 
-        # Structural recursion. We navigate through the values of the fields 
-        # inside 'properties' without accidentally deleting the field names themselves!
+        
         if "properties" in d and isinstance(d["properties"], dict):
             for field_schema in d["properties"].values():
                 clean_schema(field_schema)
@@ -82,11 +80,11 @@ def _init_client() -> GenerativeModel:
                 for item in d["items"]:
                     clean_schema(item)
 
-    # Clean the blueprint from top to bottom structurally
+    
     clean_schema(base_schema)
     
     return genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
+        model_name="gemini-3.5-flash",
         generation_config=GenerationConfig(
             temperature=0.2,
             response_mime_type="application/json",
