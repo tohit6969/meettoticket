@@ -33,15 +33,29 @@ def _init_client() -> GenerativeModel:
         )
     genai.configure(api_key=api_key)
     
+    # ✅ FIX: Export clean JSON schema and strip out any 'default' keys 
+    # that cause the Google Cloud API gateway to throw a 400 error.
+    raw_schema = MeetingAnalysis.model_json_schema()
+    
+    def strip_defaults(d):
+        if isinstance(d, dict):
+            # Delete the 'default' key if it exists in this layer
+            d.pop("default", None)
+            for k, v in d.items():
+                strip_defaults(v)
+        elif isinstance(d, list):
+            for item in d:
+                strip_defaults(item)
+                
+    strip_defaults(raw_schema)
+    
     return genai.GenerativeModel(
-        # Standard active free-tier production engine
         model_name="gemini-2.5-flash",
         generation_config=GenerationConfig(
             temperature=0.2,
             response_mime_type="application/json",
-            # ✅ CRITICAL FIX: Forces the API gateway to strictly 
-            # constrain the LLM structural layout to your Pydantic blueprint
-            response_schema=MeetingAnalysis,
+            # Pass the safely sanitized dictionary schema layout
+            response_schema=raw_schema,
         ),
     )
 
