@@ -19,11 +19,15 @@ from gemini_client import extract_tickets_from_transcript
 from models import MeetingAnalysis, Priority, TicketStatus
 from sheets_client import retry_cached_tickets, write_analysis_to_sheets
 
+
+
 # ─────────────────────────────────────────────
 # Bootstrap
 # ─────────────────────────────────────────────
 
 load_dotenv()
+os.makedirs("data", exist_ok=True) 
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
