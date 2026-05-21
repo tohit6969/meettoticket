@@ -42,8 +42,7 @@ def _init_client() -> GenerativeModel:
     def inline_and_sanitize(d):
         """
         Recursively steps through the dictionary to replace Pydantic's 
-        '$ref' pointers with their literal definitions, while removing 
-        any unsupported OpenAPI properties.
+        '$ref' and 'anyOf' pointers with Gemini-compatible native layouts.
         """
         if isinstance(d, dict):
             # 1. Resolve nested schema references instantly
@@ -51,14 +50,24 @@ def _init_client() -> GenerativeModel:
                 ref_path = d.pop("$ref")
                 ref_name = ref_path.split("/")[-1]
                 if ref_name in definitions:
-                    # Merge the internal definition straight into the current block
                     d.update(definitions[ref_name])
             
-            # 2. Drop any unsupported keyword arguments
+            # 2. CRITICAL FIX: Convert Pydantic's 'anyOf' [Type, null] into a native nullable Type
+            if "anyOf" in d:
+                any_of_list = d.pop("anyOf")
+                # Filter out the null option to find the actual data type
+                non_null_types = [t for t in any_of_list if isinstance(t, dict) and t.get("type") != "null"]
+                
+                if non_null_types:
+                    # Merge the true data type attributes directly into the property block
+                    d.update(non_null_types[0])
+                    d["nullable"] = True
+            
+            # 3. Drop any unsupported keyword arguments
             d.pop("default", None)
             d.pop("title", None)
             
-            # 3. Recursively parse child parameters
+            # 4. Recursively parse child parameters
             for k, v in list(d.items()):
                 inline_and_sanitize(v)
                 
