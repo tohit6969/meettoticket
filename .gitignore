@@ -1,0 +1,9 @@
+# Local credentials & configuration files
+.env
+credentials.json
+.streamlit/
+
+# Local databases and tracking files
+data/
+__pycache__/
+*.pyc

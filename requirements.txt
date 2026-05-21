@@ -1,0 +1,17 @@
+# MeetToTicket AI — Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# ── Core AI ──────────────────────────────────────────
+google-generativeai>=0.7.0        # Gemini SDK with structured output support
+pydantic>=2.7.0                   # Data validation + schema enforcement
+
+# ── Google Sheets ─────────────────────────────────────
+gspread>=6.1.0                    # Google Sheets Python client
+google-auth>=2.29.0               # OAuth2 for service accounts
+google-api-python-client>=2.130.0 # For HttpError type (rate limit detection)
+
+# ── Web App ───────────────────────────────────────────
+streamlit>=1.35.0                 # Frontend UI
+
+# ── Utilities ─────────────────────────────────────────
+python-dotenv>=1.0.1              # .env file loading
