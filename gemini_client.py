@@ -33,7 +33,7 @@ def _init_client() -> GenerativeModel:
         )
     genai.configure(api_key=api_key)
     return genai.GenerativeModel(
-        model_name="gemini-1.5-pro-latest",
+        model_name="gemini-1.5-flash",
         generation_config=GenerationConfig(
             temperature=0.2,        # Low temp → deterministic structured output
             response_mime_type="application/json",
