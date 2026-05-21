@@ -33,32 +33,50 @@ def _init_client() -> GenerativeModel:
         )
     genai.configure(api_key=api_key)
     
-    # ✅ FIX: Export clean JSON schema and strip out any 'default' keys 
-    # that cause the Google Cloud API gateway to throw a 400 error.
-    raw_schema = MeetingAnalysis.model_json_schema()
+    # Get the raw schema dictionary from Pydantic
+    base_schema = MeetingAnalysis.model_json_schema()
     
-    def strip_defaults(d):
+    # Extract the definitions mapping out of the schema if it exists
+    definitions = base_schema.pop("$defs", {})
+    
+    def inline_and_sanitize(d):
+        """
+        Recursively steps through the dictionary to replace Pydantic's 
+        '$ref' pointers with their literal definitions, while removing 
+        any unsupported OpenAPI properties.
+        """
         if isinstance(d, dict):
-            # Delete the 'default' key if it exists in this layer
+            # 1. Resolve nested schema references instantly
+            if "$ref" in d:
+                ref_path = d.pop("$ref")
+                ref_name = ref_path.split("/")[-1]
+                if ref_name in definitions:
+                    # Merge the internal definition straight into the current block
+                    d.update(definitions[ref_name])
+            
+            # 2. Drop any unsupported keyword arguments
             d.pop("default", None)
-            for k, v in d.items():
-                strip_defaults(v)
+            d.pop("title", None)
+            
+            # 3. Recursively parse child parameters
+            for k, v in list(d.items()):
+                inline_and_sanitize(v)
+                
         elif isinstance(d, list):
             for item in d:
-                strip_defaults(item)
-                
-    strip_defaults(raw_schema)
+                inline_and_sanitize(item)
+
+    # Transform the schema dictionary completely inline
+    inline_and_sanitize(base_schema)
     
     return genai.GenerativeModel(
         model_name="gemini-2.5-flash",
         generation_config=GenerationConfig(
             temperature=0.2,
             response_mime_type="application/json",
-            # Pass the safely sanitized dictionary schema layout
-            response_schema=raw_schema,
+            response_schema=base_schema,
         ),
     )
-
 
 # ─────────────────────────────────────────────
 # System Prompt
