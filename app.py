@@ -1,7 +1,7 @@
 """
 app.py — MeetToTicket AI
 Main Streamlit application.
-Pipeline: Transcript → Dedup → Gemini (Structured Output) → Sheets (Async) → Global Chatbot
+Pipeline: Transcript → Dedup → Gemini (Structured Output) → Sheets (Async) → Global Chatbot (Toto)
 """
 
 import asyncio
@@ -19,7 +19,7 @@ from gemini_client import extract_tickets_from_transcript
 from models import MeetingAnalysis, Priority, TicketStatus
 from sheets_client import retry_cached_tickets, write_analysis_to_sheets
 
-# ✅ NATIVE INTEGRATION: Import the chatbot assistant utility module
+# NATIVE INTEGRATION: Import the chatbot assistant utility module
 from chatbot_manager import answer_ticket_query
 
 # ─────────────────────────────────────────────
@@ -52,97 +52,166 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────
-# Custom CSS Styling Layouts
+# Custom Premium SaaS UI Styling Layouts (CSS)
 # ─────────────────────────────────────────────
 
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
 
-    html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
-
-    h1, h2, h3 { font-family: 'Space Mono', monospace; }
-
-    .stApp { background: #0d1117; color: #e6edf3; }
-
-    .metric-card {
-        background: #161b22;
-        border: 1px solid #30363d;
-        border-radius: 8px;
-        padding: 16px 20px;
-        text-align: center;
+    html, body, [class*="css"] { 
+        font-family: 'Plus Jakarta Sans', sans-serif; 
     }
-    .metric-card h3 { margin: 0; font-size: 2rem; color: #58a6ff; }
-    .metric-card p  { margin: 4px 0 0; font-size: 0.85rem; color: #8b949e; }
 
+    h1, h2, h3, h4, h5, h6 { 
+        font-family: 'Space Mono', monospace; 
+        letter-spacing: -0.5px;
+    }
+
+    .stApp { 
+        background: #090d13; 
+        color: #e6edf3; 
+    }
+
+    /* Modern Minimalist Metrics */
+    .metric-card {
+        background: #121824;
+        border: 1px solid #212e46;
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        transition: all 0.25s ease-in-out;
+    }
+    .metric-card:hover {
+        transform: translateY(-4px);
+        border-color: #58a6ff;
+        box-shadow: 0 8px 20px rgba(88, 166, 255, 0.15);
+    }
+    .metric-card h3 { 
+        margin: 0; 
+        font-size: 2.2rem; 
+        color: #58a6ff; 
+        font-weight: 700;
+    }
+    .metric-card p { 
+        margin: 6px 0 0; 
+        font-size: 0.9rem; 
+        color: #8b949e; 
+        font-weight: 500;
+    }
+
+    /* Sleek Elevated Tickets */
     .ticket-card {
-        background: #161b22;
-        border: 1px solid #21262d;
-        border-left: 3px solid #58a6ff;
-        border-radius: 6px;
-        padding: 14px 18px;
-        margin-bottom: 10px;
+        background: #121824;
+        border: 1px solid #1e293b;
+        border-left: 4px solid #58a6ff;
+        border-radius: 10px;
+        padding: 16px 22px;
+        margin-bottom: 14px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .ticket-card:hover {
+        transform: scale(1.008);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+        border-color: #38bdf8;
     }
     .ticket-card.critical { border-left-color: #f85149; }
     .ticket-card.high     { border-left-color: #e3b341; }
     .ticket-card.medium   { border-left-color: #58a6ff; }
     .ticket-card.low      { border-left-color: #3fb950; }
 
+    /* Clean Pill Badges */
     .badge {
         display: inline-block;
-        padding: 2px 8px;
-        border-radius: 12px;
+        padding: 4px 10px;
+        border-radius: 20px;
         font-size: 0.75rem;
         font-weight: 600;
-        margin-right: 4px;
+        margin-right: 6px;
+        letter-spacing: 0.2px;
     }
-    .badge-critical { background: #3d1d1d; color: #f85149; }
-    .badge-high     { background: #2d2200; color: #e3b341; }
-    .badge-medium   { background: #1d2d45; color: #58a6ff; }
-    .badge-low      { background: #1a2d1a; color: #3fb950; }
-    .badge-type     { background: #21262d; color: #8b949e; }
+    .badge-critical { background: rgba(248, 81, 73, 0.12); color: #f85149; border: 1px solid rgba(248, 81, 73, 0.2); }
+    .badge-high     { background: rgba(227, 179, 65, 0.12); color: #e3b341; border: 1px solid rgba(227, 179, 65, 0.2); }
+    .badge-medium   { background: rgba(88, 166, 255, 0.12); color: #58a6ff; border: 1px solid rgba(88, 166, 255, 0.2); }
+    .badge-low      { background: rgba(63, 185, 80, 0.12); color: #3fb950; border: 1px solid rgba(63, 185, 80, 0.2); }
+    .badge-type     { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
 
+    /* Custom Banners */
     .warning-box {
-        background: #2d2200;
+        background: #1e1b12;
         border: 1px solid #e3b341;
-        border-radius: 6px;
-        padding: 12px 16px;
+        border-radius: 8px;
+        padding: 14px 18px;
         color: #e3b341;
-        margin: 8px 0;
+        margin: 12px 0;
     }
     .success-box {
-        background: #1a2d1a;
+        background: #0f1c15;
         border: 1px solid #3fb950;
-        border-radius: 6px;
-        padding: 12px 16px;
+        border-radius: 8px;
+        padding: 14px 18px;
         color: #3fb950;
-        margin: 8px 0;
+        margin: 12px 0;
     }
     .info-box {
-        background: #1d2d45;
+        background: #0c192c;
         border: 1px solid #58a6ff;
-        border-radius: 6px;
-        padding: 12px 16px;
+        border-radius: 8px;
+        padding: 14px 18px;
         color: #58a6ff;
-        margin: 8px 0;
+        margin: 12px 0;
     }
+
+    /* Input & Text Fields Formats */
     div[data-testid="stTextArea"] textarea {
-        background: #0d1117 !important;
-        border: 1px solid #30363d !important;
-        color: #e6edf3 !important;
+        background: #0f141c !important;
+        border: 1px solid #222f44 !important;
+        color: #f1f5f9 !important;
         font-family: 'Space Mono', monospace;
-        font-size: 0.85rem;
+        font-size: 0.88rem;
+        border-radius: 8px !important;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
     }
+    div[data-testid="stTextArea"] textarea:focus {
+        border-color: #58a6ff !important;
+    }
+    
+    /* Premium Action Button */
     .stButton > button {
-        background: #238636;
-        color: white;
-        border: none;
-        font-family: 'DM Sans', sans-serif;
-        font-weight: 600;
-        border-radius: 6px;
+        background: linear-gradient(135deg, #2ea043 0%, #238636 100%) !important;
+        color: white !important;
+        border: 1px solid #3fb950 !important;
+        font-weight: 600 !important;
+        border-radius: 8px !important;
+        padding: 10px 24px !important;
+        box-shadow: 0 4px 12px rgba(35, 134, 54, 0.25) !important;
+        transition: all 0.2s ease;
     }
-    .stButton > button:hover { background: #2ea043; }
+    .stButton > button:hover { 
+        background: linear-gradient(135deg, #34b24b 0%, #2ea043 100%) !important;
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(35, 134, 54, 0.4) !important;
+    }
+    
+    /* Clean Sidebar Customization */
+    section[data-testid="stSidebar"] {
+        background-color: #0c1017 !important;
+        border-right: 1px solid #212e46 !important;
+    }
+    
+    /* Details Summary Tweaks */
+    details summary {
+        color: #38bdf8;
+        font-weight: 500;
+        outline: none;
+        margin-top: 4px;
+    }
+    details[open] summary {
+        color: #7dd3fc;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -176,23 +245,23 @@ def render_ticket_card(ticket) -> None:
         f"""
         <div class="ticket-card {prio_class}">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-                <strong style="font-size:1rem;color:#e6edf3;">{ticket.title}</strong>
-                <span style="font-size:0.75rem;color:#8b949e;font-family:monospace;">{ticket.ticket_id}</span>
+                <strong style="font-size:1.05rem;color:#f1f5f9;font-weight:600;">{ticket.title}</strong>
+                <span style="font-size:0.75rem;color:#64748b;font-family:monospace;background:#0f141c;padding:2px 6px;border-radius:4px;">{ticket.ticket_id}</span>
             </div>
-            <div style="margin:6px 0;">
+            <div style="margin:8px 0;">
                 {priority_badge(ticket.priority.value)}
                 <span class="badge badge-type">{ticket.ticket_type.value}</span>
                 <span class="badge badge-type">👤 {ticket.assigned_to}</span>
                 {"<span class='badge badge-type'>📅 " + ticket.due_date + "</span>" if ticket.due_date else ""}
             </div>
-            <p style="color:#8b949e;font-size:0.85rem;margin:6px 0;">{ticket.description}</p>
+            <p style="color:#94a3b8;font-size:0.88rem;margin:8px 0;line-height:1.5;">{ticket.description}</p>
             <details>
-                <summary style="cursor:pointer;color:#58a6ff;font-size:0.8rem;">Acceptance Criteria</summary>
-                <ul style="margin:6px 0;padding-left:18px;color:#c9d1d9;font-size:0.82rem;">{ac_html}</ul>
+                <summary style="cursor:pointer;font-size:0.82rem;">Acceptance Criteria</summary>
+                <ul style="margin:8px 0;padding-left:18px;color:#cbd5e1;font-size:0.85rem;line-height:1.4;">{ac_html}</ul>
             </details>
-            {f'<div style="margin-top:6px;">{tags_html}</div>' if tags_html else ""}
-            <div style="margin-top:8px;padding-top:8px;border-top:1px solid #21262d;">
-                <em style="font-size:0.78rem;color:#484f58;">💬 "{ticket.source_quote}"</em>
+            {f'<div style="margin-top:8px;">{tags_html}</div>' if tags_html else ""}
+            <div style="margin-top:10px;padding-top:10px;border-top:1px solid #1e293b;">
+                <em style="font-size:0.8rem;color:#64748b;font-style:italic;">💬 "{ticket.source_quote}"</em>
             </div>
         </div>
         """,
@@ -348,15 +417,15 @@ with tab_submit:
                 st.write("✅ Pipeline complete.")
                 status.update(label="Done!", state="complete")
 
-            # ✅ Persistent cache storage for layout retention
+            # Persistent cache storage for layout retention
             st.session_state["active_run_outcome"] = result
             if result["status"] == "success":
                 st.session_state["last_analysis"] = result["analysis"]
-                # Flush chat log arrays on fresh generation loads
+                # Flush chat history arrays on fresh generation loads
                 if "chat_messages" in st.session_state:
                     del st.session_state["chat_messages"]
 
-    # ✅ Persistent Dashboard Rendering Layer (Maintains views during Chatbot reruns)
+    # Persistent Dashboard Rendering Layer (Maintains views during Chatbot reruns)
     if "active_run_outcome" in st.session_state:
         result = st.session_state["active_run_outcome"]
 
@@ -404,6 +473,7 @@ with tab_submit:
                     unsafe_allow_html=True,
                 )
 
+            st.write("")
             st.markdown(f"> {analysis.summary}")
 
             # Risk parameters expansion frames
@@ -520,7 +590,7 @@ with tab_history:
 
 
 # ══════════════════════════════════════════════
-# 💬 GLOBAL COMPONENT — Interactive Contextual Chatbot
+# 💬 GLOBAL COMPONENT — Interactive Contextual Chatbot (Toto)
 # ══════════════════════════════════════════════
 
 # Placed at the absolute root level (no tab nesting block) to render flawlessly!
@@ -528,15 +598,15 @@ if "last_analysis" in st.session_state:
     analysis: MeetingAnalysis = st.session_state["last_analysis"]
     
     st.write("---")
-    st.subheader("💬 Ask MeetToTicket AI Chatbot")
-    st.caption("Ask questions about metrics, bugs, priorities, or assignees in English or Hinglish!")
+    st.markdown("### 🤖 Chat with Toto")
+    st.caption("Ask Toto about total weights, specific task owners, blockers, or bugs in Hinglish or English!")
 
     # Initial assistant seed configuration
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = [
             {
                 "role": "assistant", 
-                "content": "Hi! Context loaded. Aap mujhse is meeting ke tickets ka total, bugs counter, ya custom assignees ke baare me kuch bhi pooch sakte hain! 👋"
+                "content": "Oi! **Toto** here. 🐕 Live sprint context loaded successfully! Aap mujhse tickets, bugs counter, deadlines, ya allocations ke baare me kuch bhi pooch sakte hain. Boliyen, kya help chahiye?"
             }
         ]
 
@@ -546,14 +616,14 @@ if "last_analysis" in st.session_state:
             st.write(msg["content"])
 
     # Monitor interactive prompt text submissions
-    if chat_prompt := st.chat_input("E.g., Total tickets kitne bane aur usme se high priority wale kaunse hai?"):
+    if chat_prompt := st.chat_input("Ask Toto... (e.g., Bugs kitne hain aur kaun handles kar raha hai?)"):
         with st.chat_message("user"):
             st.write(chat_prompt)
         st.session_state.chat_messages.append({"role": "user", "content": chat_prompt})
 
-        # Process user query utilizing the active memory context structure
+        # Process user query utilizing Toto's active memory context structure
         with st.chat_message("assistant"):
-            with st.spinner("Analyzing dashboard memory..."):
+            with st.spinner("Toto is analyzing the board metrics..."):
                 answer = answer_ticket_query(analysis, chat_prompt)
                 st.write(answer)
         st.session_state.chat_messages.append({"role": "assistant", "content": answer})
