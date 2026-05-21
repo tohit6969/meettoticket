@@ -33,7 +33,7 @@ def _init_client() -> GenerativeModel:
         )
     genai.configure(api_key=api_key)
     return genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
+        model_name="gemini-3.5-flash",
         generation_config=GenerationConfig(
             temperature=0.2,
             response_mime_type="application/json",
