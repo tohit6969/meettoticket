@@ -503,9 +503,9 @@ with tab_submit:
             )
 
 
-# ══════════════════════════════════════════════
+# ─────────────────────────────────────────────
 # TAB 2 — Ticket Board
-# ══════════════════════════════════════════════
+# ─────────────────────────────────────────────
 
 with tab_board:
     st.markdown("# 📋 Ticket Board")
@@ -554,9 +554,9 @@ with tab_board:
                 st.divider()
 
 
-# ══════════════════════════════════════════════
+# ─────────────────────────────────────────────
 # TAB 3 — Submission History Archive
-# ══════════════════════════════════════════════
+# ─────────────────────────────────────────────
 
 with tab_history:
     st.markdown("# 🕐 Submission History")
@@ -594,15 +594,23 @@ with tab_history:
 # ══════════════════════════════════════════════
 
 # Placed at the absolute root level (no tab nesting block) to render flawlessly!
-if "last_analysis" in st.session_state:
-    analysis: MeetingAnalysis = st.session_state["last_analysis"]
-    
-    st.write("---")
-    st.markdown("### 🤖 Chat with Toto")
-    st.caption("Ask Toto about total weights, specific task owners, blockers, or bugs in Hinglish or English!")
+st.write("---")
+st.markdown("### 🤖 Chat with Toto")
+st.caption("Ask Toto about total weights, allocations, bugs, or general Agile strategy in Hinglish or English!")
 
-    # Initial assistant seed configuration
-    if "chat_messages" not in st.session_state:
+# Grab active analysis payload safely if it exists in system state memory
+analysis_context = st.session_state.get("last_analysis", None)
+
+# Seed adaptive initial conversation responses depending on data states
+if "chat_messages" not in st.session_state:
+    if analysis_context is None:
+        st.session_state.chat_messages = [
+            {
+                "role": "assistant", 
+                "content": "Oi! **Toto** here. 🐕 Sab kuch ready hai! Abhi tak koi meeting transcript load nahi hui hai. Aap upar box me transcript paste karke **Generate Tickets** dabayein, tab tak aap mujhse koi bhi general Agile ya project management ka sawaal pooch sakte hain!"
+            }
+        ]
+    else:
         st.session_state.chat_messages = [
             {
                 "role": "assistant", 
@@ -610,20 +618,20 @@ if "last_analysis" in st.session_state:
             }
         ]
 
-    # Render persistent conversation layout streams
-    for msg in st.session_state.chat_messages:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
+# Render persistent conversation layout streams
+for msg in st.session_state.chat_messages:
+    with st.chat_message(msg["role"]):
+        st.write(msg["content"])
 
-    # Monitor interactive prompt text submissions
-    if chat_prompt := st.chat_input("Ask Toto... (e.g., Bugs kitne hain aur kaun handles kar raha hai?)"):
-        with st.chat_message("user"):
-            st.write(chat_prompt)
-        st.session_state.chat_messages.append({"role": "user", "content": chat_prompt})
+# Monitor interactive prompt text inputs dynamically
+if chat_prompt := st.chat_input("Ask Toto..."):
+    with st.chat_message("user"):
+        st.write(chat_prompt)
+    st.session_state.chat_messages.append({"role": "user", "content": chat_prompt})
 
-        # Process user query utilizing Toto's active memory context structure
-        with st.chat_message("assistant"):
-            with st.spinner("Toto is analyzing the board metrics..."):
-                answer = answer_ticket_query(analysis, chat_prompt)
-                st.write(answer)
-        st.session_state.chat_messages.append({"role": "assistant", "content": answer})
+    # Process query strings passing the active context state safely (could be None)
+    with st.chat_message("assistant"):
+        with st.spinner("Toto is analyzing..."):
+            answer = answer_ticket_query(analysis_context, chat_prompt)
+            st.write(answer)
+    st.session_state.chat_messages.append({"role": "assistant", "content": answer})
